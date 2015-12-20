@@ -7,7 +7,7 @@ def normalize(x):
     return T.switch(T.eq(norms,0),0,x/norms)
 
 floatx="float32"
-def align_arg(_arg,length):
+
     v = T.repeat(_arg.reshape([-1,1]),length,axis =1)
     return v
 def append_dim(_arg):
@@ -77,10 +77,11 @@ _vec_norms = T.sqrt((
 _dist = _vec_norms*T.sin(_acos)
 _dist = T.switch(T.eq(_power%2,0),_dist,T.abs_(_dist))
 
+#verified so far
 ##retina_response
-##TODO:  switch to save computations for points with high dist
+
 #min_influence = 0.01
-#max_distance = min_influence**(1./power) ...
+#max_distance = min_influence**(1./power)
 
 _response = T.sum( 
     T.exp(-_dist**_power /_variance),
