@@ -2,22 +2,22 @@ from sklearn.externals import joblib
 import numpy as np
 from sklearn.utils.extmath import cartesian
 
-import compiled
+import retina_symbolic
 
 def _response_job(retina,*args,**kwargs):
     return retina.response(*args,**kwargs)
 
 class Retina:
-    def __init__(self,ks,alphas,bethas,variance=0.01,power=2,):
+    def __init__(self,ks,alphas,bethas,variance=0.01):
         """a fully vectorized retina for 3d lines going through a fixed point"""
         ks_x,ks_y,ks_z = np.vstack(ks)
         self.ks=ks
         grid = cartesian([ks_x,ks_y,ks_z,alphas,bethas])
-        
-        self._respond = compiled.get_response_function(*grid.T)
 
-        self.variance = variance
-        self.power = power
+        sigma = variance**.5 #because reasons
+
+        self._respond = retina_symbolic.get_response_function(*grid.T,sigma = sigma)
+
         
     def response(self,hits,block_size = None ,n_jobs = 1,inner_block_size = None):
         """compute a retina response matrix [alpha,beta] -> response at (alpha,beta)"""
@@ -45,5 +45,5 @@ class Retina:
 
         else: #single block
             x,y,z=hits.T
-            response = self._respond(x,y,z,self.power,self.variance)
+            response = self._respond(x,y,z)
             return response
