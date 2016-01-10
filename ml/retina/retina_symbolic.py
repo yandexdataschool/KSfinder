@@ -3,7 +3,7 @@ import theano
 import numpy as np
 __doc__="A fully vectorized theanized solution to massively computing line-point distances and points from arrays of lines"
 
-from auxilary import _normalize, _append_dim, _norm
+from auxilary import _normalize, _append_dim, _norm,_linspace
 
 def _align_arg(_arg,length):
     """retina-specific dimension reshape that duplicates arg along new appended axis"""
@@ -195,3 +195,84 @@ def get_response_function(x0,y0,z0,alpha,beta,sigma = None,allow_downcast = True
                               givens = givens,
                               allow_input_downcast=allow_downcast,
                              )
+
+def get_response_with_shared_hits(_xhits=None,_yhits=None,_zhits=None):
+    """returns a tuple of (compiled function, shared variables)
+    where
+       compiled function is a theano function of
+                            _x0c,_y0c,_z0c, #scalar zero point coordinates
+                            _alpha0,_dalpha, #scalar center and half-window along alpha 
+                            _beta0,_dbeta, #scalar center and half-window along beta
+                            _sigma, #scalar sigma (square root of variance)
+                            _xdim,_ydim #scalar retina grid dimensions along alpha and beta
+        using shared variables _xhits,_yhits,_zhits
+        to represent event hits' coordinates
+        
+        shared variables are a list of variables [_xhits,_yhits,_zhits] (see later)
+        
+    If _xhits, _yhits or _zhits parameters are set to something other than None,
+    they are treated as symbolic shared (or constant) variables for a function.
+        
+    If they are equal to None(default), new shared variables of type theano.config.floatX
+    are created
+
+    """
+    #grid params
+    _x0c = T.scalar('retina.x0.center',"floatX")
+    _y0c = T.scalar('retina.y0.center',"floatX")
+    _z0c = T.scalar('retina.z0.center',"floatX")
+    _alpha0 = T.scalar('retina.alpha.center',"floatX")
+    _beta0 = T.scalar('retina.beta.center',"floatX")
+    _dalpha = T.scalar('retina.alpha.halfwindow',"floatX")
+    _dbeta = T.scalar('retina.beta.halfwindow',"floatX")
+    _sigma = T.scalar('retina.sigma',"floatX")
+
+    _xdim = T.scalar("retina.dim.x","int32")
+    _ydim = T.scalar("retina.dim.y","int32")
+
+
+    ##create grid given parameters
+    _n_points = _xdim*_ydim
+    _x0 = T.repeat(_x0c,_n_points)
+    _y0 = T.repeat(_y0c,_n_points)
+    _z0 = T.repeat(_z0c,_n_points)
+
+    #inner grid:
+    #d0,d1,d2,d0,d1,d2,d0,d1,d2,d0,d1,d2
+    _alpha = _linspace(_alpha0-_dalpha, _alpha0+_dalpha,_xdim)
+    _alpha = _append_dim(_alpha)
+    _alpha = T.repeat(_alpha,_ydim,axis=1).T.ravel()
+
+    #outer grid:
+    #d0,d0,d0,d0,d1,d1,d1,d1,d2,d2,d2,d2
+    _beta = _linspace(_beta0-_dbeta, _beta0+_dbeta,_ydim)
+    _beta = T.repeat( _beta,_xdim)
+
+
+    ##event hits
+    _shared = lambda name,val,dtype: theano.shared(val.astype(dtype),name,
+                                               strict = True,allow_downcast=True)
+    floatX = theano.config.floatX
+
+    if _xhits is None:
+        _xhits = _shared('hits.x',np.zeros(1),floatX)
+    if _yhits is None:
+        _yhits= _shared('hits.y',np.zeros(1),floatX)
+    if _zhits is None:
+        _zhits = _shared('hits.z',np.zeros(1),floatX)
+    shareds = [_xhits,_yhits,_zhits]
+
+
+    _response = _compute_retina_response(_xhits,_yhits,_zhits,
+                         _x0,_y0,_z0,
+                         _alpha, _beta,
+                        _sigma,
+                 )
+    response = theano.function([
+                            _x0c,_y0c,_z0c,
+                            _alpha0,_dalpha,
+                            _beta0,_dbeta,
+                            _sigma,
+                            _xdim,_ydim
+                           ],_response)
+    return response,shareds
