@@ -51,7 +51,7 @@ class LocalInhibitionLayer1D(lasagne.layers.Layer):
     This code is adapted from pylearn2.
     """
 
-    def __init__(self, incoming,n=3, k=2., alpha=1,**kwargs):
+    def __init__(self, incoming,n=3, k=0.,d=1., alpha=1,**kwargs):
         """
         Local Response Normalization for over specified axis.
         Aggregation is purely across LAST axis
@@ -60,6 +60,7 @@ class LocalInhibitionLayer1D(lasagne.layers.Layer):
             - incoming: input layer or shape (tensor4)
             - alpha: coefficient for x in the exponent
             - k: laplacian smoothing term for exp(x) (added to exp(x_i), n*k added to denominator) 
+            - d: denominator additive constant
             - n: number of adjacent channels to normalize over (including channel itself)
         """
         super(LocalInhibitionLayer1D, self).__init__(incoming,
@@ -67,6 +68,7 @@ class LocalInhibitionLayer1D(lasagne.layers.Layer):
         self.alpha = alpha
         self.k = k
         self.n = n
+        self.d = d
         if n % 2 == 0:
             raise NotImplementedError("Only works with odd n")
 
@@ -90,7 +92,7 @@ class LocalInhibitionLayer1D(lasagne.layers.Layer):
         
         exp_x_padded = T.set_subtensor(extra_channels[:,:, :, half_n:half_n+c],
                                     exp_x)
-        denominator = self.k*self.n
+        denominator = self.k*self.n + self.d
         for i in range(self.n):
             denominator += exp_x_padded[:, :, :, i:i+c]
         
