@@ -14,8 +14,19 @@ def _append_dim(_arg):
 def _linspace(start,stop,num_units,dtype = "float32"):
     """a minimalistic symbolic equivalent of numpy.linspace"""
     return start + T.arange(num_units,dtype=dtype)*(stop-start) / (num_units-1)
+def _in1d(arr,in_arr):
+    """for each element in arr returns 1 if in_arr contains this element, otherwise 0"""
+    return T.eq(arr.reshape([1,-1]),in_arr.reshape([-1,1])).any(axis=0)
 
 
 
 
 
+from theano.tensor.opt import register_canonicalize
+class ConsiderConstant(theano.compile.ViewOp):
+    """treats input as constant when computing grads"""
+    def grad(self, args, g_outs):
+        return [T.zeros_like(g_out) for g_out in g_outs]
+
+consider_constant = ConsiderConstant()
+register_canonicalize(theano.gof.OpRemove(consider_constant), name='remove_consider_constant_op')

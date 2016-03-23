@@ -9,6 +9,7 @@ import lasagne
 from lasagne.layers import MergeLayer,Gate
 from lasagne import nonlinearities,init
 from lasagne.utils import unroll_scan
+from auxilary import _in1d
 
 floatX = theano.config.floatX
 _shared = lambda name,val,dtype: theano.shared(val.astype(dtype),name,
@@ -38,6 +39,28 @@ class BaseEnvironment:
         calls it before each new session start"""
         raise NotImplementedError                 
 
+
+class OutputChannelLayer(lasagne.layers.Layer):
+    """
+    A layer that picks out_i'th output of the incoming MDPlayer  
+    ----------
+    incoming : a :class:`Layer` instance or a tuple
+        The layer feeding into this layer, or the expected input shape.
+    out_i : int
+        The number of dimensions in the output.
+    See Also
+    --------
+    MDPlayer - the [likely] only thing to wirk as an incoming layer
+    """
+    def __init__(self, incoming, out_i=0, **kwargs):
+        super(OutputChannelLayer, self).__init__(incoming, **kwargs)
+        self.out_i = out_i
+    def get_output_shape_for(self, input_shape):
+        return input_shape[self.out_i]
+
+    def get_output_for(self, input, **kwargs):
+        return input[self.out_i]        
+
 class GRULayer(MergeLayer):
     r"""
     a recurrent layer that implements MDP network principles over base Gate Recurrent Unit architecture
@@ -56,9 +79,11 @@ class GRULayer(MergeLayer):
                  hid_init_factory=init.Constant(0.),
                  
                  grad_clipping=5.,
+                 use_sessions = False,
                  only_return_final=False,
                  **kwargs):
 
+        self.use_sessions = False
         incomings = [incoming]
 
         
@@ -169,10 +194,12 @@ class GRULayer(MergeLayer):
         # When only_return_final is true, the second (sequence step) dimension
         # will be flattened
         if self.only_return_final:
-            return input_shape[0], 2,self.num_units
+            return 3,input_shape[0],self.num_units
         # Otherwise, the shape will be (n_batch, n_steps, num_units)
         else:
-            return input_shape[0], input_shape[1],2, self.num_units
+            return (input_shape[0], input_shape[1], self.num_units),\
+                   (input_shape[0], input_shape[1], self.env.n_actions),\
+                   (input_shape[0], input_shape[1], self.env.n_actions)
 
     def get_output_for(self, inputs, **kwargs):
         """
@@ -269,13 +296,13 @@ class GRULayer(MergeLayer):
             # Compute (1 - u_t)h_{t - 1} + u_t c_t
             hid = (1 - updategate)*hid_previous + updategate*hidden_update
             
-            #apply hid to output network if it exists, else just sent hidden layer as output
+            #apply hid to output network if it exists, else just send hidden layer as output
             if self.hidden_to_output_network is None:
                 output = hid
             else:
                 output = self.hidden_to_output_network.get_output_for(hid)
             
-            decision = self.env.decision_by_hidden(step_iter,output)
+            decision = self.env.decision_by_qValues(step_iter,output)
             
             return hid,output,decision
 
@@ -374,9 +401,11 @@ def _compute_qvalues_naive(_rewards,_is_alive,_gamma_or_gammas,dependencies=[],s
     return _reference_Qvalues.T[:,::-1] #[batch,time_seq]
 
 def get_reference_tuples(_rewards,_isalive,_decision_ids,_activations,
-                               _gamma_or_gammas = _shared('q_learning_gamma',np.float32(0.99),floatX),
-                               end_code=None,
-                               naive = False
+                               _gamma_or_gammas = _shared('q_learning_gamma_default',np.float32(0.99),floatX),
+                               end_codes=None,
+                               naive = False,
+                                aggregation_function = lambda qv:T.max(qv,axis=1),
+                                 
                         ):
     """computes three vectors:
       action IDs (1d,single integer) vector of all actions that were commited during all sequences
@@ -390,7 +419,7 @@ def get_reference_tuples(_rewards,_isalive,_decision_ids,_activations,
       Qreference - sum over immediate rewards and gamma*predicted activations for
       next round after first vector predictions
       if naive == True, all actions are considered optimal in terms of Qvalue """
-    _alive_selector = _isalive[:,:-1].nonzero() # number of: [batch,time] but for (seq_len)-th
+    _alive_selector = _isalive[:,:].nonzero() # number of: [batch,time] but for (seq_len)-th
 
 
 
@@ -413,14 +442,22 @@ def get_reference_tuples(_rewards,_isalive,_decision_ids,_activations,
         _next_selector = (_alive_selector[0],_alive_selector[1]+1) # number of: [batch,time+1]
 
         # corresponding rewards for all next turn actions
-        _predicted_next_rewards =_activations[_next_selector]
-
+        _activations_padded = T.concatenate(
+                [_activations,
+                 T.zeros_like(_activations[:,0,None,:])
+                ],
+                axis=1
+            )
+        
+        _predicted_next_rewards =_activations_padded[_next_selector]
         #best of _predicted_next_rewards for each time
+        
 
-        _optimal_next_rewards = T.max(_predicted_next_rewards,axis=1)
+        _optimal_next_rewards = aggregation_function(_predicted_next_rewards)
         #if session end is given, zero out future rewards after session end
-        if end_code is not None:
-            _optimal_next_rewards = T.switch( T.eq(_chosen_action_IDs,end_code),
+        if end_codes is not None:
+            _is_end_code = _in1d(_chosen_action_IDs,end_codes)
+            _optimal_next_rewards = T.switch( _is_end_code,
                                                      0.,
                                                      _optimal_next_rewards
                                              )
