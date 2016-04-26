@@ -1,5 +1,6 @@
-FROM yandex/rep-base:0.6.1
-MAINTAINER Andrey Ustyuzhanin <anaderi@yandex-team.ru>
+FROM yandex/rep:0.6.5
+MAINTAINER Andrey Ustyuzhanin <andrey.u@gmail.com>
+
 
 COPY scripts/_start_jupyter.sh /root/start.sh
 RUN chmod +x /root/start.sh
