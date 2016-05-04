@@ -1,13 +1,21 @@
 FROM yandex/rep:0.6.5
-MAINTAINER Andrey Ustyuzhanin <andrey.u@gmail.com>
+MAINTAINER Alexander Panin <justheuristic@gmail.com>
+RUN apt-get -qq update
 
 
-COPY scripts/_start_jupyter.sh /root/start.sh
-RUN chmod +x /root/start.sh
-COPY environment.yml /root/
-RUN /root/miniconda/bin/conda env update -n=py27 -f=/root/environment.yml #  -q QUIET
+RUN /bin/bash --login -c "\
+    source activate rep_py2 && \ 
+    pip install --upgrade pip && \
+    pip install --upgrade https://github.com/Theano/Theano/archive/master.zip &&\
+    pip install --upgrade https://github.com/Lasagne/Lasagne/archive/master.zip &&\
+    pip install --upgrade https://github.com/yandexdataschool/AgentNet/archive/master.zip\
+    "
+    
+RUN /bin/bash --login -c "\
+    git clone https://github.com/yandexdataschool/KSfinder -b master &&\
+    sed -i -e '3iln -s ~/KSfinder /notebooks/KSfinder\' /root/install_modules.sh\
+    "
+    
+    
+    
 
-RUN wget https://github.com/github/git-lfs/releases/download/v1.2.0/git-lfs-linux-amd64-1.2.0.tar.gz && \
-    tar xzf git-lfs-linux-amd64-1.2.0.tar.gz && \
-    cd git-lfs-1.2.0 && ./install.sh && git lfs install && \
-    cd ../ && rm -rf git-lfs-1.2.0*
